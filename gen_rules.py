@@ -147,6 +147,13 @@ def generate_rules():
     os.makedirs(output_dir, exist_ok=True)
     
     output_file = os.path.join(output_dir, 'sr_rules.conf')
+
+    seen = set()
+    final_rules_unique = []
+    for r in final_rules:
+        if r not in seen:
+            final_rules_unique.append(r)
+            seen.add(r)
     
     with open(output_file, 'w') as f:
         f.write(HEADER.format(datetime=now))
