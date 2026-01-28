@@ -33,4 +33,10 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add output/sr_rules.conf
-          git diff --quiet && git diff --staged --quiet || (git commit -m "Auto: Update SR rules at $(date +'%Y-%m-%d %H:%M:%S')" && git push)
+          # Only commit and push if there are changes
+          if ! git diff --quiet && git diff --cached --quiet; then
+            git commit -m "Auto: Update SR rules at $(date +'%Y-%m-%d %H:%M:%S')"
+            git push
+          else
+            echo "No changes detected, skipping commit and push"
+          fi
