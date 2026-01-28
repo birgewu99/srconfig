@@ -1,0 +1,57 @@
+rules:
+  - type: RULE-SET
+    url: https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/direct.txt
+    policy: DIRECT
+  - type: RULE-SET
+    url: https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/proxy.txt
+    policy: PROXY
+  - type: RULE-SET
+    url: https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/reject.txt
+    policy: REJECT
+  - type: RULE-SET
+    url: https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/private.txt
+    policy: DIRECT
+  - type: RULE-SET
+    url: https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/apple.txt
+    policy: DIRECT
+  - type: RULE-SET
+    url: https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/icloud.txt
+    policy: DIRECT
+  - type: RULE-SET
+    url: https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/google.txt
+    policy: PROXY
+  - type: RULE-SET
+    url: https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/gfw.txt
+    policy: PROXY
+  - type: RULE-SET
+    url: https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/tld-not-cn.txt
+    policy: PROXY
+  - type: RULE-SET
+    url: https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/telegramcidr.txt
+    policy: PROXY
+  - type: RULE-SET
+    url: https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/lancidr.txt
+    policy: DIRECT
+  - type: RULE-SET
+    url: https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/cncidr.txt
+    policy: DIRECT
+  - type: RULE-SET
+    url: https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/applications.txt
+    policy: DIRECT
+  - type: RULE-SET
+    url: https://raw.githubusercontent.com/217heidai/adblockfilters/main/rules/adblockclash.list
+    policy: REJECT
+  - type: RULE-SET
+    url: https://raw.githubusercontent.com/217heidai/adblockfilters/main/rules/adblockmihomo.yaml
+    policy: REJECT
+  - type: RULE-SET
+    url: https://raw.githubusercontent.com/privacy-protection-tools/anti-AD/master/anti-ad-clash.yaml
+    policy: REJECT
+  - type: GEOIP
+    country: CN
+    policy: DIRECT
+  - type: GEOIP
+    country: PRIVATE
+    policy: DIRECT
+  - type: FINAL
+    policy: PROXY
