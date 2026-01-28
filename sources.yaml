@@ -15,6 +15,9 @@ rules:
     url: https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/icloud.txt
     policy: DIRECT
   - type: RULE-SET
+    url: https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/private.txt
+    policy: DIRECT
+  - type: RULE-SET
     url: https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/lancidr.txt
     policy: DIRECT
   - type: RULE-SET
