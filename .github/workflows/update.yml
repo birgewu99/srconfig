@@ -8,46 +8,80 @@ on:
 jobs:
   update-rules:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-      
+          persist-credentials: true
+          fetch-depth: 0
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-      
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install pyyaml requests
-      
+
+      - name: Ensure output dir exists
+        run: mkdir -p output
+
       - name: Generate SR rules
-        run: python gen_rules.py
-      
-      - name: Check output file
+        run: python -u gen_rules.py
+
+      - name: Show generated file (debug)
         run: |
+          echo "=== List output dir ==="
+          ls -la output || true
           if [ -f output/sr_rules.conf ]; then
-            size=$(wc -c < output/sr_rules.conf)
-            lines=$(wc -l < output/sr_rules.conf)
+            size=$(wc -c < output/sr_rules.conf || echo 0)
+            lines=$(wc -l < output/sr_rules.conf || echo 0)
             echo "✓ Output file generated: $size bytes, $lines lines"
+            echo "----- begin sr_rules.conf (first 200 lines) -----"
+            sed -n '1,200p' output/sr_rules.conf || true
+            echo "----- end sr_rules.conf -----"
           else
             echo "❌ Output file not generated!"
             exit 1
           fi
-      
-      - name: Commit and push changes
+
+      - name: Upload sr_rules.conf artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sr_rules
+          path: output/sr_rules.conf
+
+      - name: Commit and push changes (using PAT)
+        env:
+          PAT: ${{ secrets.PAT_PUSH }}
+          REPO: ${{ github.repository }}
+          REF: ${{ github.ref }}
         run: |
+          # stop on error; do not enable -x to avoid leaking secrets
+          set -euo pipefail
+
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
+
+          # Stage file
           git add output/sr_rules.conf
-          # If there are staged changes, commit and push; otherwise skip
+
+          # If no staged changes, skip
           if git diff --cached --quiet; then
             echo "No changes detected, skipping commit and push"
-          else
-            git commit -m "Auto: Update SR rules at $(date +'%Y-%m-%d %H:%M:%S')"
-            git push
+            exit 0
           fi
+
+          # Commit changes
+          git commit -m "Auto: Update SR rules at $(date -u +'%Y-%m-%d %H:%M:%S')"
+
+          # Resolve branch name from ref (refs/heads/<branch>)
+          BRANCH="${REF#refs/heads/}"
+
+          # Push using the PAT (do not print PAT)
+          remote_url="https://x-access-token:${PAT}@github.com/${REPO}.git"
+          git push "${remote_url}" "HEAD:${BRANCH}"
