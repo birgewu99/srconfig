@@ -68,7 +68,7 @@ def fetch_rules(url):
 def parse_rule(rule_lines, policy):
     """Parse raw rules and convert to Shadowrocket format"""
     lines = []
-    policy_name = f"{policy}-200"
+    policy_name = policy
     for rule in rule_lines:
         rule = rule.strip().strip("- '\"")  # 去掉 - ' 和引号
         if not rule or rule.startswith('#') or rule == 'payload:':
