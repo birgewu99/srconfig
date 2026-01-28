@@ -88,7 +88,7 @@ def parse_rule(rule_lines, policy):
     return lines
 
 def generate_rules():
-    """Generate SR rules config with ordering: REJECT -> DIRECT -> PROXY -> others"""
+    final_rule = None
     # Load sources
     with open('sources.yaml', 'r') as f:
         config = yaml.safe_load(f)
@@ -132,15 +132,14 @@ def generate_rules():
             print(f"Added: {rule}")
         
         elif stype == 'FINAL':
-            policy = source.get('policy', '').strip().upper()
-            rule = f"FINAL,{policy}"
-            add_to_bucket(policy, rule)
-            print(f"Added: {rule}")
+            final_rule = "FINAL,PROXY"
+            print(f"Added FINAL rule: {final_rule}")
+
     
     # Merge buckets in desired global order
     final_rules = []
     # Desired priority order
-    priority = ['REJECT', 'DIRECT', 'PROXY']
+    priority = ['REJECT', 'PROXY', 'DIRECT']
     added_policies = set()
 
     # Add priority policies first if present
@@ -170,9 +169,12 @@ def generate_rules():
             final_rules_unique.append(r)
             seen.add(r)
     
+    rules_to_write = final_rules_unique[:]
+    if final_rule:
+        rules_to_write.append(final_rule)
     with open(output_file, 'w') as f:
         f.write(HEADER.format(datetime=now))
-        f.write('\n'.join(final_rules))
+        f.write('\n'.join(rules_to_write))
         f.write(FOOTER)
     
     print(f"\nGenerated {output_file} with {total_rules} rules")
