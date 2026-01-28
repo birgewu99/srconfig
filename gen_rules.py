@@ -9,7 +9,7 @@ HEADER = """# Shadowrocket: {datetime}
 [General]
 bypass-system = true
 skip-proxy = 192.168.0.0/16, 10.0.0.0/8, 172.16.0.0/12, localhost, *.local, captive.apple.com
-tun-excluded-routes = 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.0.0.0/24, 192.0.2.0/24, 192.88.99.0/24, 192.168.0.0/16, 198.51.100.0/24, 203.0.113.0/24, 224.0.0.0/4, 255.255.255.255/32, 239.255.255.250/32
+tun-excluded-routes = 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.0.0.0/24, 192.0.2.0/24, 192.88.99.0/24, 192.168.0.0/16, 198.51.100.0/24, 203.0.113.0/24, 224.0.0.0/4, 2[...]
 dns-server = https://dns.alidns.com/dns-query, https://doh.pub/dns-query, https://dns.google/dns-query, https://cloudflare-dns.com/dns-query,223.5.5.5,119.29.29.29, 8.8.8.8, 1.1.1.1
 fallback-dns-server = system
 
@@ -73,35 +73,75 @@ def parse_rule(rule_text, policy):
     return lines
 
 def generate_rules():
-    """Generate SR rules config"""
+    """Generate SR rules config with ordering: REJECT -> DIRECT -> PROXY -> others"""
     # Load sources
     with open('sources.yaml', 'r') as f:
         config = yaml.safe_load(f)
     
-    rules = []
-    
+    # policy -> list of rules (preserve insertion order within each policy)
+    policy_buckets = {}
+    # record order of first-seen policies to preserve relative order for "other" policies
+    seen_policies = []
+
     # Get current datetime
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
+    # Helper to add a rule to a policy bucket
+    def add_to_bucket(policy, rule_or_rules):
+        p = policy.strip().upper()
+        if p not in policy_buckets:
+            policy_buckets[p] = []
+            seen_policies.append(p)
+        if isinstance(rule_or_rules, list):
+            policy_buckets[p].extend(rule_or_rules)
+        else:
+            policy_buckets[p].append(rule_or_rules)
+
     # Process each rule source
-    for source in config['rules']:
-        if source['type'] == 'RULE-SET':
-            print(f"Fetching {source['url']}...")
-            rule_lines = fetch_rules(source['url'])
-            parsed = parse_rule(rule_lines, source['policy'])
-            rules.extend(parsed)
-            print(f"  Added {len(parsed)} rules from {source['url']}")
+    for source in config.get('rules', []):
+        stype = source.get('type', '').upper()
+        if stype == 'RULE-SET':
+            url = source.get('url')
+            policy = source.get('policy', '').strip().upper()
+            print(f"Fetching {url}...")
+            rule_lines = fetch_rules(url)
+            parsed = parse_rule(rule_lines, policy)
+            add_to_bucket(policy, parsed)
+            print(f"  Added {len(parsed)} rules from {url}")
         
-        elif source['type'] == 'GEOIP':
-            rule = f"GEOIP,{source['country']},{source['policy']}"
-            rules.append(rule)
+        elif stype == 'GEOIP':
+            policy = source.get('policy', '').strip().upper()
+            country = source.get('country', '')
+            rule = f"GEOIP,{country},{policy}"
+            add_to_bucket(policy, rule)
             print(f"Added: {rule}")
         
-        elif source['type'] == 'FINAL':
-            rule = f"FINAL,{source['policy']}"
-            rules.append(rule)
+        elif stype == 'FINAL':
+            policy = source.get('policy', '').strip().upper()
+            rule = f"FINAL,{policy}"
+            add_to_bucket(policy, rule)
             print(f"Added: {rule}")
     
+    # Merge buckets in desired global order
+    final_rules = []
+    # Desired priority order
+    priority = ['REJECT', 'DIRECT', 'PROXY']
+    added_policies = set()
+
+    # Add priority policies first if present
+    for p in priority:
+        if p in policy_buckets:
+            final_rules.extend(policy_buckets[p])
+            added_policies.add(p)
+    
+    # Add any remaining policies in the order they were first seen
+    for p in seen_policies:
+        if p not in added_policies:
+            final_rules.extend(policy_buckets.get(p, []))
+            added_policies.add(p)
+    
+    total_rules = sum(len(v) for v in policy_buckets.values())
+
     # Generate output
     output_dir = 'output'
     os.makedirs(output_dir, exist_ok=True)
@@ -110,10 +150,10 @@ def generate_rules():
     
     with open(output_file, 'w') as f:
         f.write(HEADER.format(datetime=now))
-        f.write('\n'.join(rules))
+        f.write('\n'.join(final_rules))
         f.write(FOOTER)
     
-    print(f"\nGenerated {output_file} with {len(rules)} rules")
+    print(f"\nGenerated {output_file} with {total_rules} rules")
 
 if __name__ == '__main__':
     generate_rules()
