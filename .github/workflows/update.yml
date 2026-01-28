@@ -1,68 +1,94 @@
-- name: Commit and push changes (diagnostic, uses PAT)
-  env:
-    PAT: ${{ secrets.PAT_PUSH }}
-    REPO: ${{ github.repository }}
-    REF: ${{ github.ref }}
-  run: |
-    set -euo pipefail
+name: Update SR Rules
 
-    # 1) quick check: PAT set?
-    if [ -z "${PAT:-}" ]; then
-      echo "ERROR: PAT_PUSH is not set or empty. Please add it to repo secrets."
-      exit 1
-    fi
-    # Print length only (no secret value)
-    echo "PAT length: ${#PAT}"
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
 
-    git config --local user.email "action@github.com"
-    git config --local user.name "GitHub Action"
+jobs:
+  update-rules:
+    runs-on: ubuntu-latest
 
-    echo "=== before changes: git status ==="
-    git status --porcelain || true
-    echo "=== staged files (before add) ==="
-    git diff --name-only --cached || true
+    steps:
+      - name: Checkout repository (no persisted GITHUB_TOKEN credentials)
+        uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          persist-credentials: false   # <- 关键：不要把 github-actions[bot] 凭据写入本地
+          fetch-depth: 0
 
-    # Stage file and show staged names
-    git add output/sr_rules.conf
-    echo "=== staged files (after add) ==="
-    git diff --name-only --cached || true
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
 
-    # If no staged changes then skip
-    if git diff --cached --quiet; then
-      echo "No changes detected, skipping commit and push"
-      exit 0
-    fi
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyyaml requests
 
-    git commit -m "Auto: Update SR rules at $(date -u +'%Y-%m-%d %H:%M:%S')"
+      - name: Ensure output dir exists
+        run: mkdir -p output
 
-    # Resolve branch
-    BRANCH="${REF#refs/heads/}"
-    echo "Target branch: ${BRANCH}"
+      - name: Generate SR rules
+        run: python -u gen_rules.py
 
-    # Show current origin (redact potential token if present)
-    origin_url=$(git remote get-url origin || echo "")
-    # redact any embedded credentials for safety
-    redacted_origin=$(echo "${origin_url}" | sed -E 's#(https://)[^@]+@#\1[REDACTED]@#')
-    echo "Origin (redacted): ${redacted_origin}"
+      - name: Show generated file (debug)
+        run: |
+          echo "=== List output dir ==="
+          ls -la output || true
+          if [ -f output/sr_rules.conf ]; then
+            size=$(wc -c < output/sr_rules.conf || echo 0)
+            lines=$(wc -l < output/sr_rules.conf || echo 0)
+            echo "✓ Output file generated: $size bytes, $lines lines"
+            echo "----- begin sr_rules.conf (first 200 lines) -----"
+            sed -n '1,200p' output/sr_rules.conf || true
+            echo "----- end sr_rules.conf -----"
+          else
+            echo "❌ Output file not generated!"
+            exit 1
+          fi
 
-    # Force set origin to use PAT (so push will use PAT)
-    git remote set-url origin "https://x-access-token:${PAT}@github.com/${REPO}.git"
-    # Show origin after set (redacted)
-    origin_url2=$(git remote get-url origin || echo "")
-    redacted_origin2=$(echo "${origin_url2}" | sed -E 's#(https://)[^@]+@#\1[REDACTED]@#')
-    echo "Origin after set-url (redacted): ${redacted_origin2}"
+      - name: Upload sr_rules.conf artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sr_rules
+          path: output/sr_rules.conf
 
-    echo "=== git remote -v (redacted) ==="
-    git remote -v | sed -E 's#(https://)[^@]+@#\1[REDACTED]@#' || true
+      - name: Commit and push changes (using PAT)
+        env:
+          PAT: ${{ secrets.PAT_PUSH }}
+          REPO: ${{ github.repository }}
+          REF: ${{ github.ref }}
+        run: |
+          # 不启用 -x 以免泄露 secrets；使用 strict flags 不会打印命令参数
+          set -euo pipefail
 
-    echo "Attempting git push..."
-    # Run push and capture output (push output will reveal which account was used in remote message)
-    if git push origin "HEAD:${BRANCH}"; then
-      echo "Push succeeded"
-      exit 0
-    else
-      echo "Push failed; capture last git push exit code: $?"
-      # Show git ls-remote to provoke remote message
-      git ls-remote origin "refs/heads/${BRANCH}" || true
-      exit 1
-    fi
+          # 检查 PAT 是否存在（不要打印其值）
+          if [ -z "${PAT:-}" ]; then
+            echo "ERROR: PAT_PUSH secret is not set or empty. Please add it to repo secrets."
+            exit 1
+          fi
+
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+
+          # Stage file
+          git add output/sr_rules.conf
+
+          # 如果没有 staged 更改则跳过
+          if git diff --cached --quiet; then
+            echo "No changes detected, skipping commit and push"
+            exit 0
+          fi
+
+          git commit -m "Auto: Update SR rules at $(date -u +'%Y-%m-%d %H:%M:%S')"
+
+          # 解析分支名（refs/heads/<branch> -> <branch>）
+          BRANCH="${REF#refs/heads/}"
+
+          # 设置 origin 使用带 PAT 的 URL，确保后续 push 使用 PAT 认证
+          git remote set-url origin "https://x-access-token:${PAT}@github.com/${REPO}.git"
+
+          # 推送到原分支
+          git push origin "HEAD:${BRANCH}"
