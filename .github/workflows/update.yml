@@ -10,11 +10,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout repository (no persisted GITHUB_TOKEN credentials)
         uses: actions/checkout@v3
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          persist-credentials: true
+          persist-credentials: false   # <- 关键：不要把 github-actions[bot] 凭据写入本地
           fetch-depth: 0
 
       - name: Set up Python
@@ -61,8 +61,14 @@ jobs:
           REPO: ${{ github.repository }}
           REF: ${{ github.ref }}
         run: |
-          # stop on error; do not enable -x to avoid leaking secrets
+          # 不启用 -x 以免泄露 secrets；使用 strict flags 不会打印命令参数
           set -euo pipefail
+
+          # 检查 PAT 是否存在（不要打印其值）
+          if [ -z "${PAT:-}" ]; then
+            echo "ERROR: PAT_PUSH secret is not set or empty. Please add it to repo secrets."
+            exit 1
+          fi
 
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
@@ -70,18 +76,19 @@ jobs:
           # Stage file
           git add output/sr_rules.conf
 
-          # If no staged changes, skip
+          # 如果没有 staged 更改则跳过
           if git diff --cached --quiet; then
             echo "No changes detected, skipping commit and push"
             exit 0
           fi
 
-          # Commit changes
           git commit -m "Auto: Update SR rules at $(date -u +'%Y-%m-%d %H:%M:%S')"
 
-          # Resolve branch name from ref (refs/heads/<branch>)
+          # 解析分支名（refs/heads/<branch> -> <branch>）
           BRANCH="${REF#refs/heads/}"
 
-          # Push using the PAT (do not print PAT)
-          remote_url="https://x-access-token:${PAT}@github.com/${REPO}.git"
-          git push "${remote_url}" "HEAD:${BRANCH}"
+          # 设置 origin 使用带 PAT 的 URL，确保后续 push 使用 PAT 认证
+          git remote set-url origin "https://x-access-token:${PAT}@github.com/${REPO}.git"
+
+          # 推送到原分支
+          git push origin "HEAD:${BRANCH}"
