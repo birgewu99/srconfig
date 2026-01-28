@@ -4,7 +4,6 @@ import requests
 from datetime import datetime
 import os
 
-# Header content for SR config
 HEADER = """# Shadowrocket: {datetime}
 [General]
 bypass-system = true
@@ -34,92 +33,93 @@ localhost = 127.0.0.1
 ^https?://(www.)?google.cn($|/.*) https://www.google.com$2 302
 """
 
+IP_CIDR_KEYWORDS = ["lancidr", "cncidr", "telegramcidr"]
+
 def fetch_rules(url):
-    """Fetch rules from remote URL"""
     try:
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-        lines = response.text.strip().split('\n')
+        resp = requests.get(url, timeout=15)
+        resp.raise_for_status()
+        lines = resp.text.strip().splitlines()
         return [line.strip() for line in lines if line.strip() and not line.strip().startswith('#')]
     except Exception as e:
         print(f"Error fetching {url}: {e}")
         return []
 
-def parse_rule(rule_lines):
-    """RULE-SET 强制输出 REJECT-200"""
+def parse_rule(rule_lines, policy="REJECT-200", is_ip=False):
+    """解析 RULE-SET，is_ip=True 时输出 IP-CIDR"""
     lines = []
     for rule in rule_lines:
         rule = rule.strip().strip("- '\"")
         if not rule or rule.startswith('#') or rule == 'payload:':
             continue
 
-        if rule.startswith('+.'):
-            domain = rule[2:]
-        elif rule.startswith('.'):
-            domain = rule[1:]
+        if is_ip:
+            lines.append(f"IP-CIDR,{rule},{policy}")
         else:
-            domain = rule
-
-        lines.append(f"DOMAIN-SUFFIX,{domain},REJECT-200")
+            # DOMAIN-SUFFIX
+            if rule.startswith('+.'):
+                domain = rule[2:]
+            elif rule.startswith('.'):
+                domain = rule[1:]
+            else:
+                domain = rule
+            lines.append(f"DOMAIN-SUFFIX,{domain},{policy}")
     return lines
 
 def generate_rules():
-    final_rule = None  # 用来存 FINAL
-    proxy_rules = []   # 用来存非 FINAL 的 PROXY
-    direct_rules = []  # 用来存 GEOIP DIRECT
-    reject_rules = []  # RULE-SET 的 REJECT-200
+    final_rule = None
+    proxy_rules = []
+    geoip_rules = []
+    ruleset_rules = []
 
-    # Load sources
     with open('sources.yaml', 'r') as f:
         config = yaml.safe_load(f)
 
-    # 解析规则
     for source in config.get('rules', []):
         stype = source.get('type', '').upper()
+        url = source.get('url', '')
+        policy = source.get('policy', '').upper() or "REJECT-200"
 
-        if stype == 'RULE-SET':
-            url = source.get('url')
-            print(f"Fetching {url}...")
+        if stype == 'RULE-SET' and url:
+            print(f"Fetching {url} ...")
             rule_lines = fetch_rules(url)
-            parsed = parse_rule(rule_lines)
-            reject_rules.extend(parsed)
-            print(f"  Added {len(parsed)} REJECT-200 rules from {url}")
+            is_ip = any(k in url.lower() for k in IP_CIDR_KEYWORDS)
+            parsed = parse_rule(rule_lines, policy=policy, is_ip=is_ip)
+            ruleset_rules.extend(parsed)
+            print(f"  Added {len(parsed)} rules from {url} ({'IP-CIDR' if is_ip else 'DOMAIN-SUFFIX'})")
 
         elif stype == 'GEOIP':
-            country = source.get('country', '')
-            rule = f"GEOIP,{country},DIRECT"
-            direct_rules.append(rule)
-            print(f"Added GEOIP DIRECT: {rule}")
+            country = source.get('country', '').upper()
+            geoip_rules.append(f"GEOIP,{country},{policy}")
+            print(f"Added GEOIP rule: GEOIP,{country},{policy}")
 
         elif stype == 'FINAL':
-            final_rule = "FINAL,PROXY"
+            final_rule = f"FINAL,{policy}" if policy else "FINAL,PROXY"
             print(f"Added FINAL rule: {final_rule}")
 
         else:
-            # 非 RULE-SET、GEOIP、FINAL 的 PROXY 规则
-            policy = source.get('policy', '').strip().upper()
+            # 其他类型默认处理为 PROXY
             if policy == "PROXY":
-                proxy_rules.append(f"{stype},{policy}")  # 或其他格式
+                proxy_rules.append(f"{stype},{policy}")
                 print(f"Added PROXY rule: {stype},{policy}")
 
-    # 写文件
+    # 写入文件
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     output_dir = "output"
     os.makedirs(output_dir, exist_ok=True)
     output_file = os.path.join(output_dir, "sr_rules.conf")
 
-    with open(output_file, 'w') as f:
+    with open(output_file, 'w', encoding='utf-8') as f:
         f.write(HEADER.format(datetime=now))
-        # 顺序：
-        # 1️⃣ RULE-SET REJECT-200
-        f.write('\n'.join(reject_rules) + '\n')
-        # 2️⃣ 非 FINAL PROXY
+        # 1️⃣ RULE-SET
+        f.write('\n'.join(ruleset_rules) + '\n')
+        # 2️⃣ PROXY
         if proxy_rules:
             f.write('\n'.join(proxy_rules) + '\n')
-        # 3️⃣ GEOIP DIRECT
-        if direct_rules:
-            f.write('\n'.join(direct_rules) + '\n')
-        # 4️⃣ FINAL PROXY 最后
+        # 3️⃣ GEOIP
+        if geoip_rules:
+            f.write('\n'.join(geoip_rules) + '\n')
+        # 4️⃣ FINAL
         if final_rule:
             f.write(final_rule + '\n')
         f.write(FOOTER)
