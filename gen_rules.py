@@ -55,13 +55,22 @@ localhost = 127.0.0.1
 def fetch_rules(url):
     """Fetch rules from remote URL"""
     try:
-        response = requests.get(url, timeout=10)
+        print(f"  Fetching from {url}...")
+        response = requests.get(url, timeout=15)
         response.raise_for_status()
         lines = response.text.strip().split('\n')
         # Filter out comments and empty lines
-        return [line.strip() for line in lines if line.strip() and not line.strip().startswith('#')]
+        filtered = [line.strip() for line in lines if line.strip() and not line.strip().startswith('#')]
+        print(f"  Successfully fetched {len(filtered)} rules")
+        return filtered
+    except requests.exceptions.Timeout:
+        print(f"  ❌ Timeout fetching {url}")
+        return []
+    except requests.exceptions.RequestException as e:
+        print(f"  ❌ Error fetching {url}: {e}")
+        return []
     except Exception as e:
-        print(f"Error fetching {url}: {e}")
+        print(f"  ❌ Unexpected error fetching {url}: {e}")
         return []
 
 def parse_rule(rule_text, policy):
@@ -75,8 +84,19 @@ def parse_rule(rule_text, policy):
 def generate_rules():
     """Generate SR rules config"""
     # Load sources
-    with open('sources.yaml', 'r') as f:
-        config = yaml.safe_load(f)
+    print("Loading sources.yaml...")
+    try:
+        with open('sources.yaml', 'r') as f:
+            config = yaml.safe_load(f)
+    except Exception as e:
+        print(f"❌ Failed to load sources.yaml: {e}")
+        return
+    
+    if not config or 'rules' not in config:
+        print("❌ No rules found in sources.yaml")
+        return
+    
+    print(f"Found {len(config['rules'])} rule sources to process\n")
     
     rules = []
     
@@ -84,23 +104,33 @@ def generate_rules():
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
     # Process each rule source
-    for source in config['rules']:
-        if source['type'] == 'RULE-SET':
-            print(f"Fetching {source['url']}...")
-            rule_lines = fetch_rules(source['url'])
-            parsed = parse_rule(rule_lines, source['policy'])
-            rules.extend(parsed)
-            print(f"  Added {len(parsed)} rules from {source['url']}")
+    for i, source in enumerate(config['rules'], 1):
+        print(f"[{i}/{len(config['rules'])}] Processing {source['type']}...")
         
-        elif source['type'] == 'GEOIP':
-            rule = f"GEOIP,{source['country']},{source['policy']}"
-            rules.append(rule)
-            print(f"Added: {rule}")
-        
-        elif source['type'] == 'FINAL':
-            rule = f"FINAL,{source['policy']}"
-            rules.append(rule)
-            print(f"Added: {rule}")
+        try:
+            if source['type'] == 'RULE-SET':
+                print(f"  Fetching {source['url']}...")
+                rule_lines = fetch_rules(source['url'])
+                parsed = parse_rule(rule_lines, source['policy'])
+                rules.extend(parsed)
+                print(f"  ✓ Added {len(parsed)} rules\n")
+            
+            elif source['type'] == 'GEOIP':
+                rule = f"GEOIP,{source['country']},{source['policy']}"
+                rules.append(rule)
+                print(f"  ✓ Added: {rule}\n")
+            
+            elif source['type'] == 'FINAL':
+                rule = f"FINAL,{source['policy']}"
+                rules.append(rule)
+                print(f"  ✓ Added: {rule}\n")
+        except Exception as e:
+            print(f"  ❌ Error processing rule: {e}\n")
+            continue
+    
+    if not rules:
+        print("⚠️  No rules were generated!")
+        return
     
     # Generate output
     output_dir = 'output'
@@ -108,12 +138,19 @@ def generate_rules():
     
     output_file = os.path.join(output_dir, 'sr_rules.conf')
     
-    with open(output_file, 'w') as f:
-        f.write(HEADER.format(datetime=now))
-        f.write('\n'.join(rules))
-        f.write(FOOTER)
-    
-    print(f"\nGenerated {output_file} with {len(rules)} rules")
+    try:
+        with open(output_file, 'w') as f:
+            f.write(HEADER.format(datetime=now))
+            f.write('\n'.join(rules))
+            f.write(FOOTER)
+        
+        # Verify file size
+        file_size = os.path.getsize(output_file)
+        print(f"✓ Generated {output_file}")
+        print(f"  Total rules: {len(rules)}")
+        print(f"  File size: {file_size} bytes")
+    except Exception as e:
+        print(f"❌ Failed to write output file: {e}")
 
 if __name__ == '__main__':
     generate_rules()
