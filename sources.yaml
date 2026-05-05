@@ -35,6 +35,44 @@ rules:
   - type: RULE-SET
     url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/Lan/Lan.list
     policy: DIRECT
+    
+    # Apple proxy rules
+  - type: DOMAIN-SUFFIX
+    value: push.apple.com
+    policy: PROXY
+  - type: DOMAIN-SUFFIX
+    value: akadns.net
+    policy: PROXY
+  - type: DOMAIN-KEYWORD
+    value: apple.com.edgekey.net
+    policy: PROXY
+  - type: IP-CIDR
+    value: 17.249.0.0/16,no-resolve
+    policy: PROXY
+  - type: IP-CIDR
+    value: 17.252.0.0/16,no-resolve
+    policy: PROXY
+  - type: IP-CIDR
+    value: 17.57.144.0/22,no-resolve
+    policy: PROXY
+  - type: IP-CIDR
+    value: 17.188.128.0/18,no-resolve
+    policy: PROXY
+  - type: IP-CIDR
+    value: 17.188.20.0/23,no-resolve
+    policy: PROXY
+  - type: IP-CIDR6
+    value: 2620:149:a44::/48,no-resolve
+    policy: PROXY
+  - type: IP-CIDR6
+    value: 2403:300:a42::/48,no-resolve
+    policy: PROXY
+  - type: IP-CIDR6
+    value: 2403:300:a51::/48,no-resolve
+    policy: PROXY
+  - type: IP-CIDR6
+    value: 2a01:b740:a42::/48,no-resolve
+    policy: PROXY
   - type: GEOIP
     country: PRIVATE
     policy: DIRECT
